@@ -1,0 +1,13 @@
+{
+  "name": "monkeyscloud/monkeyslegion-di",
+  "description": "Tiny PSR-11 container for MonkeysLegion.",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.4",
+    "psr/container": "^2.0"
+  },
+  "autoload": {
+    "psr-4": { "MonkeysLegion\\DI\\": "src/" }
+  }
+}
