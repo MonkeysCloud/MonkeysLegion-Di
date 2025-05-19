@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
@@ -9,7 +10,6 @@ use Psr\Container\ContainerExceptionInterface;
 use ReflectionClass;
 use ReflectionParameter;
 use ReflectionNamedType;
-use ReflectionUnionType;
 use RuntimeException;
 
 /**
@@ -37,8 +37,7 @@ final class Container implements ContainerInterface
 
     public function __construct(array $definitions = [])
     {
-        $this->definitions = $definitions;
-        // the container can resolve itself
+        $this->definitions        = $definitions;
         $this->instances[ContainerInterface::class] = $this;
     }
 
@@ -48,17 +47,14 @@ final class Container implements ContainerInterface
 
     public function has(string $id): bool
     {
-        // already built?
         if (isset($this->instances[$id])) {
             return true;
         }
 
-        // explicit factory or instance?
         if (array_key_exists($id, $this->definitions)) {
             return true;
         }
 
-        // fallback: only auto-wire *concrete* classes (not interfaces, not abstracts)
         if (class_exists($id)) {
             $ref = new ReflectionClass($id);
             return $ref->isInstantiable();
@@ -69,25 +65,19 @@ final class Container implements ContainerInterface
 
     public function get(string $id): mixed
     {
-        // 1) already built?
         if (isset($this->instances[$id])) {
             return $this->instances[$id];
         }
 
-        // 2) user definition?
         if (array_key_exists($id, $this->definitions)) {
-            return $this->instances[$id]
-                = $this->resolveDefinition($id, $this->definitions[$id]);
+            return $this->instances[$id] = $this->resolveDefinition($id, $this->definitions[$id]);
         }
 
-        // 3) auto-wire a concrete class?
         if (class_exists($id)) {
             return $this->instances[$id] = $this->autoWire($id);
         }
 
-        // 4) nothing matched – PSR-11 error
-        throw new class("Service \"{$id}\" not found") extends RuntimeException
-            implements NotFoundExceptionInterface {};
+        throw new class("Service \"{$id}\" not found") extends RuntimeException implements NotFoundExceptionInterface {};
     }
 
     /* ---------------------------------------------------------------------
@@ -141,14 +131,12 @@ final class Container implements ContainerInterface
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
-        if (!$type || $type instanceof ReflectionUnionType) {
+        if (!$type || !($type instanceof ReflectionNamedType)) {
             $this->fail($class, $p);
         }
-        /** @var ReflectionNamedType $named */
-        $named = $type;
-        $name  = $named->getName();
 
-        // special-case: container itself
+        $name = $type->getName();
+
         if ($name === ContainerInterface::class) {
             return $this;
         }
