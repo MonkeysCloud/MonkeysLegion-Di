@@ -5,7 +5,9 @@
   "license": "MIT",
   "require": {
     "php": "^8.4",
-    "psr/container": "^2.0"
+    "psr/container": "^2.0",
+    "ext-posix": "*",
+    "ext-pcntl": "*"
   },
   "autoload": {
     "psr-4": { "MonkeysLegion\\DI\\": "src/" }
