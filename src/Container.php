@@ -18,9 +18,9 @@ use RuntimeException;
  *
  *  • **Factories or instances** can be defined up-front (lazy factories are
  *    invoked once and then memoised).
- *  • **Auto-wiring**: any class without an explicit definition is built
- *    through reflection; constructor parameters are pulled from the
- *    container recursively.
+ *  • **Auto-wiring**: any concrete, instantiable class without an explicit
+ *    definition is built through reflection; constructor parameters are
+ *    pulled from the container recursively.
  *  • **Circular-dependency protection** with human-readable errors.
  *  • **100 % PSR-11 compliant** – you can swap it for any other container.
  */
@@ -38,8 +38,7 @@ final class Container implements ContainerInterface
     public function __construct(array $definitions = [])
     {
         $this->definitions = $definitions;
-
-        // The container can resolve itself
+        // the container can resolve itself
         $this->instances[ContainerInterface::class] = $this;
     }
 
@@ -49,29 +48,44 @@ final class Container implements ContainerInterface
 
     public function has(string $id): bool
     {
-        return isset($this->instances[$id])
-            || array_key_exists($id, $this->definitions)
-            || class_exists($id);
+        // already built?
+        if (isset($this->instances[$id])) {
+            return true;
+        }
+
+        // explicit factory or instance?
+        if (array_key_exists($id, $this->definitions)) {
+            return true;
+        }
+
+        // fallback: only auto-wire *concrete* classes (not interfaces, not abstracts)
+        if (class_exists($id)) {
+            $ref = new ReflectionClass($id);
+            return $ref->isInstantiable();
+        }
+
+        return false;
     }
 
     public function get(string $id): mixed
     {
-        /* -------- already built? -------- */
+        // 1) already built?
         if (isset($this->instances[$id])) {
             return $this->instances[$id];
         }
 
-        /* -------- user definition? ------ */
+        // 2) user definition?
         if (array_key_exists($id, $this->definitions)) {
-            return $this->instances[$id] = $this->resolveDefinition($id, $this->definitions[$id]);
+            return $this->instances[$id]
+                = $this->resolveDefinition($id, $this->definitions[$id]);
         }
 
-        /* -------- auto-wire class ------- */
+        // 3) auto-wire a concrete class?
         if (class_exists($id)) {
             return $this->instances[$id] = $this->autoWire($id);
         }
 
-        /* -------- no match :-( ---------- */
+        // 4) nothing matched – PSR-11 error
         throw new class("Service \"{$id}\" not found") extends RuntimeException
             implements NotFoundExceptionInterface {};
     }
@@ -84,16 +98,14 @@ final class Container implements ContainerInterface
     {
         if (is_callable($def)) {
             if (isset($this->resolving[$id])) {
-                // A → B → A …  recursion detected
                 throw new class("Circular dependency while resolving \"{$id}\"")
                     extends RuntimeException implements ContainerExceptionInterface {};
             }
-
             $this->resolving[$id] = true;
-            $obj = $def($this);           // call factory
+            $obj = $def($this);
             unset($this->resolving[$id]);
         } else {
-            $obj = $def;                  // plain instance
+            $obj = $def;
         }
 
         if (!is_object($obj)) {
@@ -104,12 +116,6 @@ final class Container implements ContainerInterface
         return $obj;
     }
 
-    /**
-     * Build an object by reflecting its constructor and recursively resolving
-     * all its **typed** parameters from the container.
-     *
-     * @throws ContainerExceptionInterface
-     */
     private function autoWire(string $class): object
     {
         $ref = new ReflectionClass($class);
@@ -121,7 +127,7 @@ final class Container implements ContainerInterface
 
         $ctor = $ref->getConstructor();
         if (!$ctor) {
-            return $ref->newInstance();           // no dependencies
+            return $ref->newInstance();
         }
 
         $args = [];
@@ -132,30 +138,23 @@ final class Container implements ContainerInterface
         return $ref->newInstanceArgs($args);
     }
 
-    /**
-     * Figure out what to inject into one constructor parameter.
-     *
-     * @throws ContainerExceptionInterface
-     */
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
-
-        // skip union / scalar / untyped – not safe to auto-resolve
         if (!$type || $type instanceof ReflectionUnionType) {
             $this->fail($class, $p);
         }
+        /** @var ReflectionNamedType $named */
+        $named = $type;
+        $name  = $named->getName();
 
-        /** @var ReflectionNamedType $type */
-        $typeName = $type->getName();
-
-        // special-case: ask for the container itself
-        if ($typeName === ContainerInterface::class) {
+        // special-case: container itself
+        if ($name === ContainerInterface::class) {
             return $this;
         }
 
-        if ($this->has($typeName)) {
-            return $this->get($typeName);
+        if ($this->has($name)) {
+            return $this->get($name);
         }
 
         if ($p->isDefaultValueAvailable()) {
@@ -167,11 +166,9 @@ final class Container implements ContainerInterface
 
     private function fail(string $class, ReflectionParameter $p): never
     {
-        $name = $p->getName();
+        $n    = $p->getName();
         $type = $p->getType()?->getName() ?? 'mixed';
-
-        throw new class(
-            "Cannot resolve parameter \${$name} ({$type}) for {$class}"
-        ) extends RuntimeException implements ContainerExceptionInterface {};
+        throw new class("Cannot resolve parameter \${$n} ({$type}) for {$class}")
+            extends RuntimeException implements ContainerExceptionInterface {};
     }
 }
