@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
@@ -37,7 +36,8 @@ final class Container implements ContainerInterface
 
     public function __construct(array $definitions = [])
     {
-        $this->definitions        = $definitions;
+        $this->definitions = $definitions;
+        // allow retrieving the container itself
         $this->instances[ContainerInterface::class] = $this;
     }
 
@@ -50,16 +50,13 @@ final class Container implements ContainerInterface
         if (isset($this->instances[$id])) {
             return true;
         }
-
         if (array_key_exists($id, $this->definitions)) {
             return true;
         }
-
         if (class_exists($id)) {
             $ref = new ReflectionClass($id);
             return $ref->isInstantiable();
         }
-
         return false;
     }
 
@@ -68,15 +65,12 @@ final class Container implements ContainerInterface
         if (isset($this->instances[$id])) {
             return $this->instances[$id];
         }
-
         if (array_key_exists($id, $this->definitions)) {
             return $this->instances[$id] = $this->resolveDefinition($id, $this->definitions[$id]);
         }
-
         if (class_exists($id)) {
             return $this->instances[$id] = $this->autoWire($id);
         }
-
         throw new class("Service \"{$id}\" not found") extends RuntimeException implements NotFoundExceptionInterface {};
     }
 
@@ -88,7 +82,7 @@ final class Container implements ContainerInterface
     {
         if (is_callable($def)) {
             if (isset($this->resolving[$id])) {
-                throw new class("Circular dependency while resolving \"{$id}\"")
+                throw new class("Circular dependency resolving \"{$id}\"")
                     extends RuntimeException implements ContainerExceptionInterface {};
             }
             $this->resolving[$id] = true;
@@ -98,7 +92,7 @@ final class Container implements ContainerInterface
             $obj = $def;
         }
 
-        if (!is_object($obj)) {
+        if (! is_object($obj)) {
             throw new class("Factory for \"{$id}\" did not return an object")
                 extends RuntimeException implements ContainerExceptionInterface {};
         }
@@ -109,14 +103,12 @@ final class Container implements ContainerInterface
     private function autoWire(string $class): object
     {
         $ref = new ReflectionClass($class);
-
-        if (!$ref->isInstantiable()) {
+        if (! $ref->isInstantiable()) {
             throw new class("Class {$class} cannot be instantiated")
                 extends RuntimeException implements ContainerExceptionInterface {};
         }
-
         $ctor = $ref->getConstructor();
-        if (!$ctor) {
+        if (! $ctor) {
             return $ref->newInstance();
         }
 
@@ -131,12 +123,14 @@ final class Container implements ContainerInterface
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
-        if (!$type || !($type instanceof ReflectionNamedType)) {
+        // only accept a single named class/interface type
+        if (! $type instanceof ReflectionNamedType) {
             $this->fail($class, $p);
         }
 
         $name = $type->getName();
 
+        // special-case: container itself
         if ($name === ContainerInterface::class) {
             return $this;
         }
@@ -154,9 +148,12 @@ final class Container implements ContainerInterface
 
     private function fail(string $class, ReflectionParameter $p): never
     {
-        $n    = $p->getName();
-        $type = $p->getType()?->getName() ?? 'mixed';
-        throw new class("Cannot resolve parameter \${$n} ({$type}) for {$class}")
+        $paramName = '$' . $p->getName();
+        $type = $p->getType();
+        $typeDesc = $type instanceof ReflectionNamedType
+            ? $type->getName()
+            : ($type ? (string)$type : 'mixed');
+        throw new class("Cannot resolve parameter {$paramName} ({$typeDesc}) for {$class}")
             extends RuntimeException implements ContainerExceptionInterface {};
     }
 }
