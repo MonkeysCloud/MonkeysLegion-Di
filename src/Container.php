@@ -13,6 +13,20 @@ use ReflectionUnionType;
 use RuntimeException;
 
 /**
+ * Internal exception for "service not found".
+ *
+ * @internal
+ */
+class ServiceNotFoundException extends RuntimeException implements NotFoundExceptionInterface {}
+
+/**
+ * Internal exception for errors while resolving a definition.
+ *
+ * @internal
+ */
+class ServiceResolveException extends RuntimeException implements ContainerExceptionInterface {}
+
+/**
  * Tiny yet powerful PSR-11 container.
  *
  *  • Factories / instances can be defined up-front (lazy factories are
@@ -63,8 +77,7 @@ final class Container implements ContainerInterface
             return $this->instances[$id] = $this->autoWire($id);
         }
 
-        throw new class("Service \"{$id}\" not found")
-            extends RuntimeException implements NotFoundExceptionInterface {};
+        throw new ServiceNotFoundException("Service \"{$id}\" not found");
     }
 
     /* ---------------------------------------------------------------------
@@ -75,8 +88,7 @@ final class Container implements ContainerInterface
     {
         if (is_callable($def)) {
             if (isset($this->resolving[$id])) {
-                throw new class("Circular dependency while resolving \"{$id}\"")
-                    extends RuntimeException implements ContainerExceptionInterface {};
+                throw new ServiceResolveException("Circular dependency while resolving \"{$id}\"");
             }
             $this->resolving[$id] = true;
             $obj = $def($this);
@@ -86,8 +98,7 @@ final class Container implements ContainerInterface
         }
 
         if (!is_object($obj)) {
-            throw new class("Factory for \"{$id}\" did not return an object")
-                extends RuntimeException implements ContainerExceptionInterface {};
+            throw new ServiceResolveException("Factory for \"{$id}\" did not return an object");
         }
 
         return $obj;
@@ -98,8 +109,7 @@ final class Container implements ContainerInterface
         $ref = new ReflectionClass($class);
 
         if (!$ref->isInstantiable()) {
-            throw new class("Class {$class} cannot be instantiated")
-                extends RuntimeException implements ContainerExceptionInterface {};
+            throw new ServiceResolveException("Class {$class} cannot be instantiated");
         }
 
         $ctor = $ref->getConstructor();
@@ -179,8 +189,8 @@ final class Container implements ContainerInterface
         $param   = '$' . $p->getName();
         $typeStr = (string) $p->getType() ?: 'mixed';
 
-        throw new class(
+        throw new ServiceResolveException(
             "Cannot resolve constructor parameter {$param} ({$typeStr}) for {$class}"
-        ) extends RuntimeException implements ContainerExceptionInterface {};
+        );
     }
 }
