@@ -149,6 +149,10 @@ final class Container implements ContainerInterface
                 }
             }
 
+            if ($p->isDefaultValueAvailable()) {
+                return $p->getDefaultValue();
+            }
+
             // nullable like ?Foo – use default value (often NULL) when allowed
             if ($p->allowsNull() && $p->isDefaultValueAvailable()) {
                 return $p->getDefaultValue();
