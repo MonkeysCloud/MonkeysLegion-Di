@@ -120,51 +120,55 @@ final class Container implements ContainerInterface
         return $ref->newInstanceArgs($args);
     }
 
+    /**
+     * Resolve one constructor parameter through the container.
+     *
+     * We only auto-wire *single* named classes/interfaces. Anything else
+     * (union, intersection, scalar or untyped) is rejected → fail().
+     */
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
 
-        /* ── we only auto-resolve single named classes/interfaces ── */
-        if (! $type instanceof ReflectionNamedType) {
-            // union, intersection, scalar or untyped → fail()
+        if (! $type instanceof ReflectionNamedType) {      // union / scalar / none
             $this->fail($class, $p);
         }
 
-        $name = $type->getName();
+        $id = $type->getName();
 
-        // allow injecting the container itself
-        if ($name === ContainerInterface::class) {
+        /* special-case: ask for the container itself */
+        if ($id === ContainerInterface::class) {
             return $this;
         }
 
-        // service or concrete class available?
-        if ($this->has($name)) {
-            return $this->get($name);
+        /* service or concrete class */
+        if ($this->has($id)) {
+            return $this->get($id);
         }
 
-        // optional constructor arg with default value
+        /* optional parameter with default value */
         if ($p->isDefaultValueAvailable()) {
             return $p->getDefaultValue();
         }
 
-        /* no way to resolve */
-        $this->fail($class, $p);
+        $this->fail($class, $p);   // always throws
     }
 
     /**
-     * Throw a descriptive PSR-11 ContainerException.
+     * Centralized error helper – **never** calls getName() on union types.
+     *
+     * @throws ContainerExceptionInterface
      */
     private function fail(string $class, ReflectionParameter $p): never
     {
-        $param = '$' . $p->getName();
-        $type  = $p->getType();
+        $param    = '$' . $p->getName();
+        $typeObj  = $p->getType();
 
-        // Produce a readable type description without calling getName() on unions.
-        $typeDesc = $type instanceof ReflectionNamedType
-            ? $type->getName()
-            : ($type ? (string) $type : 'mixed');
+        // Safe, works for union / intersection since PHP 8.1
+        $typeDesc = $typeObj ? (string) $typeObj : 'mixed';
 
-        throw new class("Cannot resolve constructor parameter {$param} ({$typeDesc}) for {$class}")
-            extends RuntimeException implements ContainerExceptionInterface {};
+        throw new class(
+            "Cannot resolve constructor parameter {$param} ({$typeDesc}) for {$class}"
+        ) extends RuntimeException implements ContainerExceptionInterface {};
     }
 }
