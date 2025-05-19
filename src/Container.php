@@ -9,19 +9,17 @@ use Psr\Container\ContainerExceptionInterface;
 use ReflectionClass;
 use ReflectionParameter;
 use ReflectionNamedType;
+use ReflectionUnionType;
 use RuntimeException;
 
 /**
- * Tiny yet powerful PSR-11 container
- * ==================================
+ * Tiny yet powerful PSR-11 container.
  *
- *  • **Factories or instances** can be defined up-front (lazy factories are
- *    invoked once and then memoised).
- *  • **Auto-wiring**: any concrete, instantiable class without an explicit
- *    definition is built through reflection; constructor parameters are
- *    pulled from the container recursively.
- *  • **Circular-dependency protection** with human-readable errors.
- *  • **100 % PSR-11 compliant** – you can swap it for any other container.
+ *  • Factories / instances can be defined up-front (lazy factories are
+ *    memoised).
+ *  • Auto-wiring for any concrete class without an explicit definition.
+ *  • Circular-dependency protection with human-readable errors.
+ *  • Union-type aware (Foo|Bar, ?Foo) and 100 % PSR-11 compliant.
  */
 final class Container implements ContainerInterface
 {
@@ -31,33 +29,24 @@ final class Container implements ContainerInterface
     /** @var array<string, object> resolved singletons */
     private array $instances = [];
 
-    /** @var array<string, true> flag-set while a service is being resolved */
+    /** @var array<string, true> flags while a service is being resolved */
     private array $resolving = [];
 
     public function __construct(array $definitions = [])
     {
         $this->definitions = $definitions;
-        // allow retrieving the container itself
-        $this->instances[ContainerInterface::class] = $this;
+        $this->instances[ContainerInterface::class] = $this;   // allow “ContainerInterface” injection
     }
 
     /* ---------------------------------------------------------------------
-     * PSR-11 API
+     *  PSR-11 API
      * ------------------------------------------------------------------- */
 
     public function has(string $id): bool
     {
-        if (isset($this->instances[$id])) {
-            return true;
-        }
-        if (array_key_exists($id, $this->definitions)) {
-            return true;
-        }
-        if (class_exists($id)) {
-            $ref = new ReflectionClass($id);
-            return $ref->isInstantiable();
-        }
-        return false;
+        return isset($this->instances[$id])
+            || array_key_exists($id, $this->definitions)
+            || (class_exists($id) && (new ReflectionClass($id))->isInstantiable());
     }
 
     public function get(string $id): mixed
@@ -65,24 +54,28 @@ final class Container implements ContainerInterface
         if (isset($this->instances[$id])) {
             return $this->instances[$id];
         }
+
         if (array_key_exists($id, $this->definitions)) {
             return $this->instances[$id] = $this->resolveDefinition($id, $this->definitions[$id]);
         }
+
         if (class_exists($id)) {
             return $this->instances[$id] = $this->autoWire($id);
         }
-        throw new class("Service \"{$id}\" not found") extends RuntimeException implements NotFoundExceptionInterface {};
+
+        throw new class("Service \"{$id}\" not found")
+            extends RuntimeException implements NotFoundExceptionInterface {};
     }
 
     /* ---------------------------------------------------------------------
-     * Internal helpers
+     *  Definition / auto-wiring helpers
      * ------------------------------------------------------------------- */
 
     private function resolveDefinition(string $id, callable|object $def): object
     {
         if (is_callable($def)) {
             if (isset($this->resolving[$id])) {
-                throw new class("Circular dependency resolving \"{$id}\"")
+                throw new class("Circular dependency while resolving \"{$id}\"")
                     extends RuntimeException implements ContainerExceptionInterface {};
             }
             $this->resolving[$id] = true;
@@ -92,7 +85,7 @@ final class Container implements ContainerInterface
             $obj = $def;
         }
 
-        if (! is_object($obj)) {
+        if (!is_object($obj)) {
             throw new class("Factory for \"{$id}\" did not return an object")
                 extends RuntimeException implements ContainerExceptionInterface {};
         }
@@ -103,72 +96,91 @@ final class Container implements ContainerInterface
     private function autoWire(string $class): object
     {
         $ref = new ReflectionClass($class);
-        if (! $ref->isInstantiable()) {
+
+        if (!$ref->isInstantiable()) {
             throw new class("Class {$class} cannot be instantiated")
                 extends RuntimeException implements ContainerExceptionInterface {};
         }
+
         $ctor = $ref->getConstructor();
-        if (! $ctor) {
+        if (!$ctor) {
             return $ref->newInstance();
         }
 
         $args = [];
-        foreach ($ctor->getParameters() as $param) {
-            $args[] = $this->resolveParameter($class, $param);
+        foreach ($ctor->getParameters() as $p) {
+            $args[] = $this->resolveParameter($class, $p);
         }
 
         return $ref->newInstanceArgs($args);
     }
 
-    /**
-     * Resolve one constructor parameter through the container.
-     *
-     * We only auto-wire *single* named classes/interfaces. Anything else
-     * (union, intersection, scalar or untyped) is rejected → fail().
-     */
+    /* ---------------------------------------------------------------------
+     *  Parameter resolution (union-type aware)
+     * ------------------------------------------------------------------- */
+
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
 
-        if (! $type instanceof ReflectionNamedType) {      // union / scalar / none
-            $this->fail($class, $p);
+        /* ---------- 1) single named class / interface ------------------- */
+        if ($type instanceof ReflectionNamedType) {
+            return $this->resolveNamed($type, $class, $p);
         }
 
+        /* ---------- 2) union type (Foo|Bar|Baz / ?Foo) ------------------ */
+        if ($type instanceof ReflectionUnionType) {
+            foreach ($type->getTypes() as $inner) {
+                if ($inner instanceof ReflectionNamedType && !$inner->isBuiltin()) {
+                    $id = $inner->getName();
+                    if ($this->has($id)) {
+                        return $this->get($id);
+                    }
+                }
+            }
+
+            // nullable like ?Foo – use default value (often NULL) when allowed
+            if ($p->allowsNull() && $p->isDefaultValueAvailable()) {
+                return $p->getDefaultValue();
+            }
+        }
+
+        /* ---------- 3) anything else → fail ----------------------------- */
+        $this->fail($class, $p);
+    }
+
+    private function resolveNamed(ReflectionNamedType $type,
+                                  string $class,
+                                  ReflectionParameter $p): mixed
+    {
         $id = $type->getName();
 
-        /* special-case: ask for the container itself */
         if ($id === ContainerInterface::class) {
             return $this;
         }
 
-        /* service or concrete class */
         if ($this->has($id)) {
             return $this->get($id);
         }
 
-        /* optional parameter with default value */
         if ($p->isDefaultValueAvailable()) {
             return $p->getDefaultValue();
         }
 
-        $this->fail($class, $p);   // always throws
+        $this->fail($class, $p);
     }
 
-    /**
-     * Centralized error helper – **never** calls getName() on union types.
-     *
-     * @throws ContainerExceptionInterface
-     */
+    /* ---------------------------------------------------------------------
+     *  Error helper
+     * ------------------------------------------------------------------- */
+
     private function fail(string $class, ReflectionParameter $p): never
     {
-        $param    = '$' . $p->getName();
-        $typeObj  = $p->getType();
-
-        // Safe, works for union / intersection since PHP 8.1
-        $typeDesc = $typeObj ? (string) $typeObj : 'mixed';
+        $param   = '$' . $p->getName();
+        $typeStr = (string) $p->getType() ?: 'mixed';
 
         throw new class(
-            "Cannot resolve constructor parameter {$param} ({$typeDesc}) for {$class}"
+            "Cannot resolve constructor parameter {$param} ({$typeStr}) for {$class}"
         ) extends RuntimeException implements ContainerExceptionInterface {};
     }
 }
