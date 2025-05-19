@@ -123,37 +123,48 @@ final class Container implements ContainerInterface
     private function resolveParameter(string $class, ReflectionParameter $p): mixed
     {
         $type = $p->getType();
-        // only accept a single named class/interface type
+
+        /* ── we only auto-resolve single named classes/interfaces ── */
         if (! $type instanceof ReflectionNamedType) {
+            // union, intersection, scalar or untyped → fail()
             $this->fail($class, $p);
         }
 
         $name = $type->getName();
 
-        // special-case: container itself
+        // allow injecting the container itself
         if ($name === ContainerInterface::class) {
             return $this;
         }
 
+        // service or concrete class available?
         if ($this->has($name)) {
             return $this->get($name);
         }
 
+        // optional constructor arg with default value
         if ($p->isDefaultValueAvailable()) {
             return $p->getDefaultValue();
         }
 
+        /* no way to resolve */
         $this->fail($class, $p);
     }
 
+    /**
+     * Throw a descriptive PSR-11 ContainerException.
+     */
     private function fail(string $class, ReflectionParameter $p): never
     {
-        $paramName = '$' . $p->getName();
-        $type = $p->getType();
+        $param = '$' . $p->getName();
+        $type  = $p->getType();
+
+        // Produce a readable type description without calling getName() on unions.
         $typeDesc = $type instanceof ReflectionNamedType
             ? $type->getName()
-            : ($type ? (string)$type : 'mixed');
-        throw new class("Cannot resolve parameter {$paramName} ({$typeDesc}) for {$class}")
+            : ($type ? (string) $type : 'mixed');
+
+        throw new class("Cannot resolve constructor parameter {$param} ({$typeDesc}) for {$class}")
             extends RuntimeException implements ContainerExceptionInterface {};
     }
 }
