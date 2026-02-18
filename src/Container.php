@@ -76,10 +76,19 @@ class Container implements ContainerInterface
 
         // 2. Interface binding — redirect to concrete
         if (isset($this->bindings[$id])) {
-            $concrete = $this->bindings[$id];
-            $result = $this->get($concrete);
+            if (isset($this->resolving[$id])) {
+                throw new ServiceResolveException("Circular dependency while resolving binding \"{$id}\"");
+            }
+            $this->resolving[$id] = true;
 
-            if (!isset($this->transients[$id])) {
+            try {
+                $concrete = $this->bindings[$id];
+                $result = $this->get($concrete);
+            } finally {
+                unset($this->resolving[$id]);
+            }
+
+            if (!isset($this->transients[$id]) && !isset($this->transients[$concrete])) {
                 $this->instances[$id] = $result;
             }
             return $result;
@@ -305,9 +314,9 @@ class Container implements ContainerInterface
                 return $p->getDefaultValue();
             }
 
-            // nullable like ?Foo — use default value (often NULL) when allowed
-            if ($p->allowsNull() && $p->isDefaultValueAvailable()) {
-                return $p->getDefaultValue();
+            // nullable union including null — return null when allowed
+            if ($p->allowsNull()) {
+                return null;
             }
         }
 

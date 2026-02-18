@@ -69,7 +69,10 @@ final class ContainerDumper
         }
 
         // Atomic move
-        rename($tmpFile, $outputPath);
+        if (!rename($tmpFile, $outputPath)) {
+            @unlink($tmpFile);
+            throw new ServiceResolveException("Cannot move compiled container from temporary file to: {$outputPath}");
+        }
 
         // Ensure opcache picks up the new file
         if (function_exists('opcache_invalidate')) {
@@ -94,7 +97,10 @@ final class ContainerDumper
             return null;
         }
 
-        // Case 2: ID is a class name — generate a direct-instantiation factory
+        // Case 2: ID is a class name — generate a direct-instantiation factory.
+        // Note: the original closure factory cannot be serialized to PHP source,
+        // so we generate constructor auto-wiring code. This is intentional: the
+        // compiled container trades custom factory logic for startup speed.
         if (class_exists($id)) {
             $factory = $this->generateClassFactory($id);
             if ($factory !== null) {

@@ -130,6 +130,14 @@ abstract class StubAbstract
     abstract public function doSomething(): void;
 }
 
+interface StubBindingA {}
+interface StubBindingB {}
+
+class StubWithNullableUnion
+{
+    public function __construct(public StubInterface|null $dep) {}
+}
+
 /* =====================================================================
  *  Tests
  * =================================================================== */
@@ -209,7 +217,7 @@ class ContainerTest extends TestCase
     }
 
     #[Test]
-    public function auto_wires_nullable_parameter_to_null_when_unresolvable(): void
+    public function auto_wires_nullable_parameter_when_resolvable(): void
     {
         $c = new Container();
         // StubNoConstructor IS resolvable so it will be injected
@@ -546,5 +554,50 @@ class ContainerTest extends TestCase
 
         $this->expectException(ServiceResolveException::class);
         $c->get('a');
+    }
+
+    /* -----------------------------------------------------------------
+     *  Circular binding detection (v1.1)
+     * --------------------------------------------------------------- */
+
+    #[Test]
+    public function detects_circular_bindings(): void
+    {
+        $c = new Container();
+        $c->bind(StubBindingA::class, StubBindingB::class);
+        $c->bind(StubBindingB::class, StubBindingA::class);
+
+        $this->expectException(ServiceResolveException::class);
+        $this->expectExceptionMessageMatches('/[Cc]ircular/');
+        $c->get(StubBindingA::class);
+    }
+
+    /* -----------------------------------------------------------------
+     *  Transient propagation through bindings (v1.1)
+     * --------------------------------------------------------------- */
+
+    #[Test]
+    public function transient_concrete_propagates_through_binding(): void
+    {
+        $c = new Container();
+        $c->bind(StubInterface::class, StubTransient::class);
+
+        $a = $c->get(StubInterface::class);
+        $b = $c->get(StubInterface::class);
+
+        $this->assertNotSame($a, $b);
+    }
+
+    /* -----------------------------------------------------------------
+     *  Nullable union type returns null (v1.1)
+     * --------------------------------------------------------------- */
+
+    #[Test]
+    public function nullable_union_type_returns_null_when_unresolvable(): void
+    {
+        $c = new Container();
+        // StubInterface is not resolvable, so ?StubInterface should yield null
+        $obj = $c->get(StubWithNullableUnion::class);
+        $this->assertNull($obj->dep);
     }
 }
