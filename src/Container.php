@@ -48,6 +48,22 @@ class Container implements ContainerInterface
     /** @var array<string, true> IDs marked as transient */
     private array $transients = [];
 
+    private static ?self $instance = null;
+
+    public static function setInstance(self $container): void
+    {
+        self::$instance = $container;
+    }
+
+    public static function instance(): self
+    {
+        if (!self::$instance) {
+            throw new \RuntimeException('Container instance not set.');
+        }
+
+        return self::$instance;
+    }
+
     public function __construct(array $definitions = [])
     {
         $this->definitions = $definitions;
