@@ -58,10 +58,18 @@ class Container implements ContainerInterface
     public static function instance(): self
     {
         if (!self::$instance) {
-            throw new \RuntimeException('Container instance not set.');
+            throw new ServiceResolveException('Container instance not set. Call Container::setInstance() during application bootstrap.');
         }
 
         return self::$instance;
+    }
+
+    /**
+     * Reset the global container instance.
+     */
+    public static function resetInstance(): void
+    {
+        self::$instance = null;
     }
 
     public function __construct(array $definitions = [])

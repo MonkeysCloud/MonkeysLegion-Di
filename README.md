@@ -190,6 +190,40 @@ $builder
 $container = $builder->build(); // Returns CompiledContainer if cache exists
 ```
 
+### Static Instance & ContainerAware Trait
+
+For scenarios where constructor injection is not possible (e.g., legacy code or deep inheritance), the container supports a global static instance and a helper trait.
+
+**1. Bootstrap Setup:**
+
+```php
+use MonkeysLegion\DI\Container;
+use MonkeysLegion\DI\Traits\ContainerAware;
+
+$container = new Container();
+// .... logic to add definitions, bindings, etc.
+// Set the global instance for both the Container and the Trait
+Container::setInstance($container);
+ContainerAware::setContainer($container);
+```
+
+**2. Using ContainerAware Trait:**
+
+```php
+class LegacyService {
+    use ContainerAware;
+
+    public function doSomething() {
+        // Access dependencies without constructor injection
+        $db = $this->resolve(Database::class);
+        
+        if ($this->has('feature_flag')) {
+            // ...
+        }
+    }
+}
+```
+
 ### Testing Support
 
 ```php
@@ -203,6 +237,9 @@ $container->reset();
 
 | Method | Description |
 |---|---|
+| `setInstance(Container $container): void` | Sets the global static instance. |
+| `instance(): self` | Retrieves the global instance (throws if not set). |
+| `resetInstance(): void` | Clears the global static instance. |
 | `get(string $id): mixed` | Resolve a service (PSR-11) |
 | `has(string $id): bool` | Check if service exists (PSR-11) |
 | `set(string $id, callable\|object $def): void` | Register/override at runtime |
@@ -224,6 +261,15 @@ $container->reset();
 | `transient(string $id): self` | Mark as non-singleton |
 | `enableCompilation(string $dir): self` | Enable compiled container |
 | `build(): Container` | Build the container |
+
+### `ContainerAware` Trait
+
+| Method | Description |
+|---|---|
+| `setContainer(ContainerInterface $c)` | (Static) Sets the container for all trait users. |
+| `resolve(string $id): mixed` | Resolves a service from the container. |
+| `has(string $id): bool` | Checks if a service exists. |
+| `container(): ContainerInterface` | Returns the active container instance. |
 
 ### Attributes
 

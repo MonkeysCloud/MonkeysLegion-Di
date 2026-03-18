@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
 
+use MonkeysLegion\DI\Traits\ContainerAware;
+
 /**
  * Fluent builder for constructing a Container (or CompiledContainer).
  *
@@ -118,6 +120,10 @@ final class ContainerBuilder
         foreach ($this->transients as $id) {
             $container->transient($id);
         }
+
+        // set the global instance for ContainerAware traits
+        Container::setInstance($container);
+        ContainerAware::setContainer($container);
 
         return $container;
     }
