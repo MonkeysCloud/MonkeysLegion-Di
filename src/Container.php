@@ -378,6 +378,18 @@ class Container implements ContainerInterface
             return $this->get($id);
         }
 
+        // Auto-discover concrete class for interfaces by convention:
+        // 1. FooInterface → Foo (same namespace)
+        // 2. Contracts\FooInterface → Foo (parent namespace)
+        if (!$type->isBuiltin() && interface_exists($id)) {
+            $concrete = $this->discoverConcrete($id);
+            if ($concrete && $this->has($concrete)) {
+                // Register the binding for future lookups
+                $this->bindings[$id] = $concrete;
+                return $this->get($concrete);
+            }
+        }
+
         if ($p->isDefaultValueAvailable()) {
             return $p->getDefaultValue();
         }
@@ -387,6 +399,42 @@ class Container implements ContainerInterface
         }
 
         $this->fail($class, $p);
+    }
+
+    /**
+     * Try to discover a concrete class for an interface by convention.
+     *
+     * Conventions tried:
+     *  - Same namespace: Foo\BarInterface → Foo\Bar
+     *  - Contracts sub-ns: Foo\Contracts\BarInterface → Foo\Bar
+     */
+    private function discoverConcrete(string $interface): ?string
+    {
+        $baseName = (new \ReflectionClass($interface))->getShortName();
+        $ns = substr($interface, 0, strrpos($interface, '\\'));
+
+        // Strip "Interface" suffix
+        $concreteName = preg_replace('/Interface$/', '', $baseName);
+        if ($concreteName === $baseName) {
+            return null; // Not an *Interface pattern
+        }
+
+        // Convention 1: Same namespace → Foo\Contracts\BarInterface → Foo\Contracts\Bar
+        $candidate = $ns . '\\' . $concreteName;
+        if (class_exists($candidate)) {
+            return $candidate;
+        }
+
+        // Convention 2: Parent namespace → Foo\Contracts\BarInterface → Foo\Bar
+        if (str_contains($ns, '\\Contracts')) {
+            $parentNs = str_replace('\\Contracts', '', $ns);
+            $candidate = $parentNs . '\\' . $concreteName;
+            if (class_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /* ---------------------------------------------------------------------
