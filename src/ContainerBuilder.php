@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
 
+use MonkeysLegion\DI\Contracts\ServiceProviderInterface;
 use MonkeysLegion\DI\Traits\ContainerAware;
 
 /**
@@ -54,6 +55,18 @@ final class ContainerBuilder
     public function bind(string $abstract, string $concrete): self
     {
         $this->bindings[$abstract] = $concrete;
+        return $this;
+    }
+
+    /**
+     * Register a service provider.
+     *
+     * The provider's register() method is called immediately, allowing
+     * it to add bindings, definitions, and tags to this builder.
+     */
+    public function addProvider(ServiceProviderInterface $provider): self
+    {
+        $provider->register($this);
         return $this;
     }
 
