@@ -404,9 +404,10 @@ class Container implements ContainerInterface
     /**
      * Try to discover a concrete class for an interface by convention.
      *
-     * Conventions tried:
-     *  - Same namespace: Foo\BarInterface → Foo\Bar
-     *  - Contracts sub-ns: Foo\Contracts\BarInterface → Foo\Bar
+     * Conventions tried (in order):
+     *  1. Same namespace: Foo\BarInterface → Foo\Bar
+     *  2. Contracts sub-ns: Foo\Contracts\BarInterface → Foo\Bar
+     *  3. Scan loaded classes that implement the interface (first match)
      */
     private function discoverConcrete(string $interface): ?string
     {
@@ -415,22 +416,32 @@ class Container implements ContainerInterface
 
         // Strip "Interface" suffix
         $concreteName = preg_replace('/Interface$/', '', $baseName);
-        if ($concreteName === $baseName) {
-            return null; // Not an *Interface pattern
-        }
-
-        // Convention 1: Same namespace → Foo\Contracts\BarInterface → Foo\Contracts\Bar
-        $candidate = $ns . '\\' . $concreteName;
-        if (class_exists($candidate)) {
-            return $candidate;
-        }
-
-        // Convention 2: Parent namespace → Foo\Contracts\BarInterface → Foo\Bar
-        if (str_contains($ns, '\\Contracts')) {
-            $parentNs = str_replace('\\Contracts', '', $ns);
-            $candidate = $parentNs . '\\' . $concreteName;
+        if ($concreteName !== $baseName) {
+            // Convention 1: Same namespace → Foo\Contracts\BarInterface → Foo\Contracts\Bar
+            $candidate = $ns . '\\' . $concreteName;
             if (class_exists($candidate)) {
                 return $candidate;
+            }
+
+            // Convention 2: Parent namespace → Foo\Contracts\BarInterface → Foo\Bar
+            if (str_contains($ns, '\\Contracts')) {
+                $parentNs = str_replace('\\Contracts', '', $ns);
+                $candidate = $parentNs . '\\' . $concreteName;
+                if (class_exists($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        // Convention 3: Scan loaded classes for implementors
+        foreach (get_declared_classes() as $cls) {
+            try {
+                $ref = new \ReflectionClass($cls);
+                if (!$ref->isAbstract() && $ref->implementsInterface($interface)) {
+                    return $cls;
+                }
+            } catch (\Throwable) {
+                continue;
             }
         }
 
