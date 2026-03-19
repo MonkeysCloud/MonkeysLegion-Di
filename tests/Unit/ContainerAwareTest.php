@@ -12,9 +12,7 @@ use Psr\Container\ContainerInterface;
 
 class ContainerAwareStub
 {
-    use ContainerAware {
-        resetContainer as public;
-    }
+    use ContainerAware;
 
     public function testResolve(string $id): mixed
     {
@@ -37,25 +35,11 @@ class ContainerAwareTest extends TestCase
     protected function tearDown(): void
     {
         Container::resetInstance();
-        (new ContainerAwareStub())->resetContainer();
     }
 
     #[Test]
-    public function it_uses_static_container_when_set(): void
+    public function it_proxies_directly_to_the_global_container_instance(): void
     {
-        $c = new Container();
-        ContainerAwareStub::setContainer($c);
-
-        $stub = new ContainerAwareStub();
-        $this->assertSame($c, $stub->testContainer());
-    }
-
-    #[Test]
-    public function it_falls_back_to_global_container_instance(): void
-    {
-        // Ensure static container on trait is null
-        (new ContainerAwareStub())->resetContainer();
-
         $c = new Container();
         Container::setInstance($c);
 
@@ -64,10 +48,10 @@ class ContainerAwareTest extends TestCase
     }
 
     #[Test]
-    public function it_checks_if_service_exists(): void
+    public function it_checks_if_service_exists_in_global_container(): void
     {
         $c = new Container(['foo' => fn() => 'bar']);
-        ContainerAwareStub::setContainer($c);
+        Container::setInstance($c);
 
         $stub = new ContainerAwareStub();
         $this->assertTrue($stub->testHas('foo'));
@@ -75,25 +59,12 @@ class ContainerAwareTest extends TestCase
     }
 
     #[Test]
-    public function it_resolves_service_from_container(): void
+    public function it_resolves_service_from_global_container(): void
     {
         $c = new Container(['foo' => fn() => 'bar']);
-        ContainerAwareStub::setContainer($c);
+        Container::setInstance($c);
 
         $stub = new ContainerAwareStub();
         $this->assertSame('bar', $stub->testResolve('foo'));
-    }
-
-    #[Test]
-    public function trait_container_takes_precedence_over_global_instance(): void
-    {
-        $global = new Container();
-        Container::setInstance($global);
-
-        $local = new Container();
-        ContainerAwareStub::setContainer($local);
-
-        $stub = new ContainerAwareStub();
-        $this->assertSame($local, $stub->testContainer());
     }
 }

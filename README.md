@@ -201,10 +201,10 @@ use MonkeysLegion\DI\Container;
 use MonkeysLegion\DI\Traits\ContainerAware;
 
 $container = new Container();
-// .... logic to add definitions, bindings, etc.
+// ... logic to add definitions, bindings, etc.
+
 // Set the global instance for both the Container and the Trait
 Container::setInstance($container);
-ContainerAware::setContainer($container);
 ```
 
 **2. Using ContainerAware Trait:**
@@ -266,10 +266,9 @@ $container->reset();
 
 | Method | Description |
 |---|---|
-| `setContainer(ContainerInterface $c)` | (Static) Sets the container for all trait users. |
-| `resolve(string $id): mixed` | Resolves a service from the container. |
+| `resolve(string $id): mixed` | Resolves a service from the global container. |
 | `has(string $id): bool` | Checks if a service exists. |
-| `container(): ContainerInterface` | Returns the active container instance. |
+| `container(): ContainerInterface` | Returns the global container instance. |
 
 ### Attributes
 

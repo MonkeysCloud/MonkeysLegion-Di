@@ -121,9 +121,8 @@ final class ContainerBuilder
             $container->transient($id);
         }
 
-        // set the global instance for ContainerAware traits
+        // set the global instance for all ContainerAware trait users
         Container::setInstance($container);
-        ContainerAware::setContainer($container);
 
         return $container;
     }
