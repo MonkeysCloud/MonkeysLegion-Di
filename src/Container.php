@@ -325,6 +325,7 @@ class Container implements ContainerInterface
 
         /* ---------- 2) union type (Foo|Bar|Baz / ?Foo) ------------------ */
         if ($type instanceof ReflectionUnionType) {
+            // Try non-builtin types first (class/interface resolution)
             foreach ($type->getTypes() as $inner) {
                 if ($inner instanceof ReflectionNamedType && !$inner->isBuiltin()) {
                     $id = $inner->getName();
@@ -332,6 +333,16 @@ class Container implements ContainerInterface
                         return $this->get($id);
                     }
                 }
+            }
+
+            // Check if there's a definition keyed by "ClassName::$paramName" or "$paramName"
+            $paramName = $p->getName();
+            $qualifiedKey = $class . '::$' . $paramName;
+            if ($this->has($qualifiedKey)) {
+                return $this->get($qualifiedKey);
+            }
+            if (array_key_exists($paramName, $this->definitions)) {
+                return $this->resolveDefinition($paramName, $this->definitions[$paramName]);
             }
 
             if ($p->isDefaultValueAvailable()) {
