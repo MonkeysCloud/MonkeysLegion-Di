@@ -1,12 +1,24 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\DI\Traits;
 
 use MonkeysLegion\DI\Container;
+
 use Psr\Container\ContainerInterface;
 
+/**
+ * MonkeysLegion Framework — DI Package
+ *
+ * Provides convenient access to the global container instance.
+ *
+ * Use this trait sparingly — constructor injection is always preferred.
+ * This exists for edge cases where DI cannot reach (e.g., framework
+ * bootstrapping, legacy integration).
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
+ */
 trait ContainerAware
 {
     /**

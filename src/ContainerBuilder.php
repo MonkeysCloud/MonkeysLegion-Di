@@ -1,33 +1,42 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
 
-use MonkeysLegion\DI\Contracts\ServiceProviderInterface;
-use MonkeysLegion\DI\Traits\ContainerAware;
-
 /**
+ * MonkeysLegion Framework — DI Package
+ *
  * Fluent builder for constructing a Container (or CompiledContainer).
  *
  * Providers register definitions via addDefinitions() or set(), then call
  * build() to obtain the ready-to-use container.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 final class ContainerBuilder
 {
     /** @var array<string, callable|object> */
     private array $definitions = [];
 
-    /** @var array<string, string> interface → concrete */
+    /** @var array<string, string> Interface → concrete. */
     private array $bindings = [];
 
-    /** @var array<string, string|string[]> id → tag(s) */
+    /** @var array<string, string|string[]> ID → tag(s). */
     private array $tags = [];
 
-    /** @var list<string> IDs marked as transient */
+    /** @var list<string> IDs marked as transient. */
     private array $transients = [];
 
+    /** @var array<string, string> Alias → target. */
+    private array $aliases = [];
+
+    /** @var array<string, array<string, string|callable>> Consumer → [abstract → concrete]. */
+    private array $contextualBindings = [];
+
     private ?string $compilationDir = null;
+
+    // ── Definitions ────────────────────────────────────────────────
 
     /**
      * Merge an array of definitions.
@@ -49,6 +58,8 @@ final class ContainerBuilder
         return $this;
     }
 
+    // ── Bindings ───────────────────────────────────────────────────
+
     /**
      * Bind an interface to a concrete class.
      */
@@ -59,16 +70,19 @@ final class ContainerBuilder
     }
 
     /**
-     * Register a service provider.
+     * Register a contextual binding.
      *
-     * The provider's register() method is called immediately, allowing
-     * it to add bindings, definitions, and tags to this builder.
+     * @param string          $consumer FQCN of the consuming class.
+     * @param string          $abstract Interface or class being requested.
+     * @param string|callable $concrete Concrete class name or factory closure.
      */
-    public function addProvider(ServiceProviderInterface $provider): self
+    public function contextual(string $consumer, string $abstract, string|callable $concrete): self
     {
-        $provider->register($this);
+        $this->contextualBindings[$consumer][$abstract] = $concrete;
         return $this;
     }
+
+    // ── Tagging ────────────────────────────────────────────────────
 
     /**
      * Tag a service.
@@ -81,6 +95,8 @@ final class ContainerBuilder
         return $this;
     }
 
+    // ── Transients ─────────────────────────────────────────────────
+
     /**
      * Mark a service as transient (new instance on every get()).
      */
@@ -89,6 +105,19 @@ final class ContainerBuilder
         $this->transients[] = $id;
         return $this;
     }
+
+    // ── Aliases ────────────────────────────────────────────────────
+
+    /**
+     * Register an alias.
+     */
+    public function alias(string $alias, string $id): self
+    {
+        $this->aliases[$alias] = $id;
+        return $this;
+    }
+
+    // ── Compilation ────────────────────────────────────────────────
 
     /**
      * Enable compiled container mode.
@@ -100,6 +129,8 @@ final class ContainerBuilder
         $this->compilationDir = rtrim($cacheDir, '/');
         return $this;
     }
+
+    // ── Build ──────────────────────────────────────────────────────
 
     /**
      * Build and return the container.
@@ -124,6 +155,13 @@ final class ContainerBuilder
             $container->bind($abstract, $concrete);
         }
 
+        // Apply contextual bindings
+        foreach ($this->contextualBindings as $consumer => $bindings) {
+            foreach ($bindings as $abstract => $concrete) {
+                $container->contextual($consumer, $abstract, $concrete);
+            }
+        }
+
         // Apply tags
         foreach ($this->tags as $id => $tags) {
             $container->tag($id, $tags);
@@ -134,7 +172,12 @@ final class ContainerBuilder
             $container->transient($id);
         }
 
-        // set the global instance for all ContainerAware trait users
+        // Apply aliases
+        foreach ($this->aliases as $alias => $id) {
+            $container->alias($alias, $id);
+        }
+
+        // Set the global instance
         Container::setInstance($container);
 
         return $container;
