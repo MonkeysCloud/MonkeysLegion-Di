@@ -83,6 +83,21 @@ interface ContainerInterface extends PsrContainerInterface
     public function transient(string $id): void;
 
     /**
+     * Extend / decorate an existing service.
+     *
+     * The callable receives the resolved service and the container, and must
+     * return the (potentially wrapped) service.
+     *
+     * If the service is already cached as a singleton the extender is applied
+     * immediately and the cache is updated.  Otherwise it is composed around
+     * the existing factory and invoked on first resolution.
+     *
+     * @param string   $id       Service identifier.
+     * @param callable $extender fn(mixed $service, static $container): mixed
+     */
+    public function extend(string $id, callable $extender): void;
+
+    /**
      * Clear all resolved instances (useful for testing).
      */
     public function reset(): void;

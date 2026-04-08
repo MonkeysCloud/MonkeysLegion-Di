@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
 
+use MonkeysLegion\DI\Contracts\ServiceProviderInterface;
+
 /**
  * MonkeysLegion Framework — DI Package
  *
@@ -33,6 +35,9 @@ final class ContainerBuilder
 
     /** @var array<string, array<string, string|callable>> Consumer → [abstract → concrete]. */
     private array $contextualBindings = [];
+
+    /** @var array<string, list<callable>> Service extensions to apply after build. */
+    private array $extensions = [];
 
     private ?string $compilationDir = null;
 
@@ -117,6 +122,37 @@ final class ContainerBuilder
         return $this;
     }
 
+    // ── Extensions ─────────────────────────────────────────────────
+
+    /**
+     * Extend / decorate a service after it is resolved.
+     *
+     * Extensions are applied to the built container via Container::extend().
+     * Multiple extensions for the same ID are applied in registration order.
+     *
+     * @param string   $id       Service identifier.
+     * @param callable $extender fn(mixed $service, Container $container): mixed
+     */
+    public function extend(string $id, callable $extender): self
+    {
+        $this->extensions[$id][] = $extender;
+        return $this;
+    }
+
+    // ── Service Providers ──────────────────────────────────────────
+
+    /**
+     * Register a service provider.
+     *
+     * The provider's register() method is called immediately so that it can
+     * add its own definitions, bindings, tags, etc. via the fluent builder API.
+     */
+    public function addServiceProvider(ServiceProviderInterface $provider): self
+    {
+        $provider->register($this);
+        return $this;
+    }
+
     // ── Compilation ────────────────────────────────────────────────
 
     /**
@@ -175,6 +211,13 @@ final class ContainerBuilder
         // Apply aliases
         foreach ($this->aliases as $alias => $id) {
             $container->alias($alias, $id);
+        }
+
+        // Apply extensions
+        foreach ($this->extensions as $id => $extenders) {
+            foreach ($extenders as $extender) {
+                $container->extend($id, $extender);
+            }
         }
 
         // Set the global instance
