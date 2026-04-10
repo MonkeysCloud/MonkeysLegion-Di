@@ -31,6 +31,5 @@ final class Decorator
 {
     public function __construct(
         public readonly string $decorates,
-        public readonly int $priority = 0,
     ) {}
 }

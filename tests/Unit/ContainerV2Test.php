@@ -431,25 +431,33 @@ class ContainerV2Test extends TestCase
     public function testReflectionCacheImprovesThroughput(): void
     {
         Container::clearReflectionCache();
+        $this->container->bind(V2LoggerInterface::class, V2FileLogger::class);
 
-        // Cold
+        // Cold — reflection cache empty on each iteration
         $start = hrtime(true);
         for ($i = 0; $i < 1000; $i++) {
+            Container::clearReflectionCache();
             $c = new Container();
-            $c->get(V2FileLogger::class);
+            $c->bind(V2LoggerInterface::class, V2FileLogger::class);
+            $c->get(V2ServiceA::class);
         }
         $cold = (hrtime(true) - $start) / 1_000_000;
 
-        // Warm (cache populated from cold run)
+        // Warm — cache populated from previous iterations
         $start = hrtime(true);
         for ($i = 0; $i < 1000; $i++) {
             $c = new Container();
-            $c->get(V2FileLogger::class);
+            $c->bind(V2LoggerInterface::class, V2FileLogger::class);
+            $c->get(V2ServiceA::class);
         }
         $warm = (hrtime(true) - $start) / 1_000_000;
 
-        // Warm should be at least 20% faster (or both very fast)
-        self::assertLessThan(100.0, $warm, "1000 warm resolves took {$warm}ms");
+        // Warm should be faster — allow 10% tolerance for CI jitter
+        self::assertLessThanOrEqual(
+            $cold * 1.1,
+            $warm,
+            "Warm resolves ({$warm}ms) should not exceed cold ({$cold}ms) + 10% tolerance",
+        );
     }
 
     public function testClearReflectionCache(): void

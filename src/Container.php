@@ -124,10 +124,14 @@ class Container implements ContainerInterface
     public function has(string $id): bool
     {
         if (isset($this->instances[$id])
-            || isset($this->aliases[$id])
             || array_key_exists($id, $this->definitions)
             || isset($this->bindings[$id])) {
             return true;
+        }
+
+        // Alias — validate the target is actually resolvable
+        if (isset($this->aliases[$id])) {
+            return $this->has($this->aliases[$id]);
         }
 
         if (!class_exists($id)) {
@@ -289,7 +293,7 @@ class Container implements ContainerInterface
     {
         // Already a cached singleton — apply immediately and update cache.
         if (isset($this->instances[$id])) {
-            $this->instances[$id] = $extender($this->instances[$id], $this);
+            $this->instances[$id] = $this->invokeFlexible($extender, $this->instances[$id]);
             return;
         }
 
@@ -342,12 +346,17 @@ class Container implements ContainerInterface
         if (is_array($callable) && count($callable) === 2) {
             [$target, $method] = $callable;
 
+            // Resolve static vs instance — don't instantiate for static calls
+            $ref = new ReflectionMethod($target, $method);
+            $args = $this->resolveMethodParams($ref, $params);
+
+            if ($ref->isStatic()) {
+                return $ref->invokeArgs(null, $args);
+            }
+
             if (is_string($target)) {
                 $target = $this->get($target);
             }
-
-            $ref = new ReflectionMethod($target, $method);
-            $args = $this->resolveMethodParams($ref, $params);
 
             return $ref->invokeArgs($target, $args);
         }
@@ -456,11 +465,14 @@ class Container implements ContainerInterface
             array_pop($this->resolvingStack);
         }
 
+        // Apply extenders BEFORE caching so cached value is the extended one
+        $result = $this->applyExtenders($id, $result);
+
         if (!isset($this->transients[$id]) && !isset($this->transients[$concrete])) {
             $this->instances[$id] = $result;
         }
 
-        return $this->applyExtenders($id, $result);
+        return $result;
     }
 
     // ── Private: Definition Resolution ─────────────────────────────
@@ -476,7 +488,8 @@ class Container implements ContainerInterface
             $this->resolvingStack[] = $id;
 
             try {
-                $result = $def($this);
+                // Support both fn() and fn(Container $c) signatures
+                $result = $this->invokeFactory($def);
             } finally {
                 unset($this->resolving[$id]);
                 array_pop($this->resolvingStack);
@@ -546,7 +559,7 @@ class Container implements ContainerInterface
             } else {
                 $args = [];
                 foreach ($meta['params'] as $p) {
-                    if (isset($params[$p->getName()])) {
+                    if (array_key_exists($p->getName(), $params)) {
                         $args[] = $params[$p->getName()];
                     } else {
                         $args[] = $this->resolveParameter($class, $p);
@@ -738,7 +751,7 @@ class Container implements ContainerInterface
                 $contextual = $this->contextualBindings[$class][$id];
                 if (is_callable($contextual)) {
                     /** @var callable $contextual */
-                    return $contextual($this);
+                    return $this->invokeFactory($contextual);
                 }
 
                 return $this->get($contextual);
@@ -749,8 +762,13 @@ class Container implements ContainerInterface
                 $isLazy = true;
             }
 
+            // Lazy proxy — resolve bound concrete for interfaces
             if ($isLazy && $this->has($id)) {
-                return $this->createLazyProxy($id);
+                $proxyTarget = isset($this->bindings[$id]) ? $this->bindings[$id] : $id;
+                if (class_exists($proxyTarget) && (new ReflectionClass($proxyTarget))->isInstantiable()) {
+                    return $this->createLazyProxy($proxyTarget);
+                }
+                // Not proxyable (interface/abstract) — fall through to eager resolve
             }
 
             if ($this->has($id)) {
@@ -783,7 +801,7 @@ class Container implements ContainerInterface
                     $contextual = $this->contextualBindings[$class][$id];
                     if (is_callable($contextual)) {
                         /** @var callable $contextual */
-                        return $contextual($this);
+                        return $this->invokeFactory($contextual);
                     }
 
                     return $this->get($contextual);
@@ -825,7 +843,7 @@ class Container implements ContainerInterface
         foreach ($ref->getParameters() as $p) {
             $name = $p->getName();
 
-            if (isset($params[$name])) {
+            if (array_key_exists($name, $params)) {
                 $args[] = $params[$name];
                 continue;
             }
@@ -982,9 +1000,36 @@ class Container implements ContainerInterface
     private function applyExtenders(string $id, mixed $value): mixed
     {
         foreach ($this->extenders[$id] ?? [] as $extender) {
-            $value = $extender($value, $this);
+            $value = $this->invokeFlexible($extender, $value);
         }
 
         return $value;
+    }
+
+    // ── Private: Callable Invocation Helpers ───────────────────────
+
+    /**
+     * Invoke a factory callable, supporting both fn() and fn(Container $c)
+     * signatures for backward compatibility.
+     */
+    private function invokeFactory(callable $factory): mixed
+    {
+        $paramCount = (new ReflectionFunction(\Closure::fromCallable($factory)))
+            ->getNumberOfParameters();
+
+        return $paramCount === 0 ? $factory() : $factory($this);
+    }
+
+    /**
+     * Invoke an extender with arity-flexible signature.
+     *
+     * Supports both fn($service) and fn($service, Container $c).
+     */
+    private function invokeFlexible(callable $extender, mixed $value): mixed
+    {
+        $paramCount = (new ReflectionFunction(\Closure::fromCallable($extender)))
+            ->getNumberOfParameters();
+
+        return $paramCount === 1 ? $extender($value) : $extender($value, $this);
     }
 }

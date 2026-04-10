@@ -10,8 +10,6 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 use MonkeysLegion\DI\Container;
-use MonkeysLegion\DI\Attributes\Singleton;
-use MonkeysLegion\DI\Attributes\Tagged;
 
 // ── Fixtures ────────────────────────────────────────────────────
 
