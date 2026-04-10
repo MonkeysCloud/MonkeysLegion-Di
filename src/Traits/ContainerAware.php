@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace MonkeysLegion\DI\Traits;
 
 use MonkeysLegion\DI\Container;
-use Psr\Container\ContainerInterface;
 
 trait ContainerAware
 {
     /**
      * Get the global container instance.
      */
-    protected function container(): ContainerInterface
+    protected function container(): Container
     {
         return Container::instance();
     }
