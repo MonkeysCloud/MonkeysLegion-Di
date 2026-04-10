@@ -24,7 +24,7 @@ trait ContainerAware
     /**
      * Get the global container instance.
      */
-    protected function container(): ContainerInterface
+    protected function container(): Container
     {
         return Container::instance();
     }
