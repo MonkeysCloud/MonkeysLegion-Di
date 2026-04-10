@@ -75,6 +75,9 @@ class Container implements ContainerInterface
     /** @var array<string, array<string, string|callable>> Consumer → [abstract → concrete]. */
     private array $contextualBindings = [];
 
+    /** @var array<string, list<callable>> Post-resolution extension callbacks. */
+    private array $extenders = [];
+
     /** @var array<string, array{ref: ReflectionClass<object>, params: list<ReflectionParameter>, attrs: array<string, object>}> */
     private static array $reflectionCache = [];
 
@@ -120,11 +123,23 @@ class Container implements ContainerInterface
 
     public function has(string $id): bool
     {
-        return isset($this->instances[$id])
+        if (isset($this->instances[$id])
             || isset($this->aliases[$id])
             || array_key_exists($id, $this->definitions)
-            || isset($this->bindings[$id])
-            || (class_exists($id) && (new ReflectionClass($id))->isInstantiable());
+            || isset($this->bindings[$id])) {
+            return true;
+        }
+
+        if (!class_exists($id)) {
+            return false;
+        }
+
+        // Use reflection cache — avoids repeated ReflectionClass construction.
+        // A class is resolvable when it is directly instantiable OR it carries
+        // a #[Factory] attribute (whose method acts as the constructor surrogate,
+        // so the class constructor visibility is irrelevant).
+        $meta = $this->getReflectionMeta($id);
+        return $meta['ref']->isInstantiable() || isset($meta['attrs']['factory']);
     }
 
     public function get(string $id): mixed
@@ -147,6 +162,7 @@ class Container implements ContainerInterface
         // 4. Explicit definition (factory or instance)
         if (array_key_exists($id, $this->definitions)) {
             $result = $this->resolveDefinition($id, $this->definitions[$id]);
+            $result = $this->applyExtenders($id, $result);
 
             if (!isset($this->transients[$id])) {
                 $this->instances[$id] = $result;
@@ -160,6 +176,7 @@ class Container implements ContainerInterface
             // Check if class is marked #[Lazy] — return proxy instead
             if ($this->isClassLazy($id)) {
                 $proxy = $this->createLazyProxy($id);
+                $proxy = $this->applyExtenders($id, $proxy);
 
                 if (!isset($this->transients[$id])) {
                     $this->instances[$id] = $proxy;
@@ -169,6 +186,7 @@ class Container implements ContainerInterface
             }
 
             $result = $this->autoWire($id);
+            $result = $this->applyExtenders($id, $result);
 
             if (!isset($this->transients[$id])) {
                 $this->instances[$id] = $result;
@@ -249,6 +267,34 @@ class Container implements ContainerInterface
     {
         $this->transients[$id] = true;
         unset($this->instances[$id]);
+    }
+
+    /**
+     * Extend / decorate an existing service.
+     *
+     * The callable receives the resolved service and this container, and must
+     * return the (potentially wrapped) replacement.
+     *
+     *  • If the service is already cached as a singleton the extender is
+     *    applied immediately and the cache is updated.
+     *  • Otherwise the extender is stored and applied transparently on first
+     *    resolution — regardless of whether the service is defined explicitly
+     *    or auto-wired.
+     *  • Multiple extenders for the same ID are applied in registration order.
+     *
+     * @param string   $id       Service identifier.
+     * @param callable $extender fn(mixed $service, static $container): mixed
+     */
+    public function extend(string $id, callable $extender): void
+    {
+        // Already a cached singleton — apply immediately and update cache.
+        if (isset($this->instances[$id])) {
+            $this->instances[$id] = $extender($this->instances[$id], $this);
+            return;
+        }
+
+        // Store for application after first resolution.
+        $this->extenders[$id][] = $extender;
     }
 
     /**
@@ -361,6 +407,36 @@ class Container implements ContainerInterface
         return $this->definitions;
     }
 
+    /**
+     * Get all registered interface → concrete bindings.
+     *
+     * @return array<string, string>
+     */
+    public function getBindings(): array
+    {
+        return $this->bindings;
+    }
+
+    /**
+     * Get all registered alias → target mappings.
+     *
+     * @return array<string, string>
+     */
+    public function getAliases(): array
+    {
+        return $this->aliases;
+    }
+
+    /**
+     * Get the IDs of all services marked as transient.
+     *
+     * @return list<string>
+     */
+    public function getTransients(): array
+    {
+        return array_keys($this->transients);
+    }
+
     // ── Private: Binding Resolution ────────────────────────────────
 
     private function resolveBinding(string $id): mixed
@@ -384,7 +460,7 @@ class Container implements ContainerInterface
             $this->instances[$id] = $result;
         }
 
-        return $result;
+        return $this->applyExtenders($id, $result);
     }
 
     // ── Private: Definition Resolution ─────────────────────────────
@@ -597,7 +673,7 @@ class Container implements ContainerInterface
      */
     private function createLazyProxy(string $class): object
     {
-        $ref = new ReflectionClass($class);
+        $ref = $this->getReflectionMeta($class)['ref'];
 
         return $ref->newLazyProxy(function (object $proxy) use ($class): object {
             return $this->autoWire($class);
@@ -891,5 +967,24 @@ class Container implements ContainerInterface
         throw new ServiceResolveException(
             "Cannot resolve constructor parameter {$param} ({$typeStr}) for {$class}",
         );
+    }
+
+    // ── Private: Extension Application ─────────────────────────────
+
+    /**
+     * Apply registered extenders for a service ID in registration order.
+     *
+     * Extenders are one-shot for singleton-cached services: they are applied
+     * on first resolution and the result is stored in the singleton cache by
+     * the caller, so subsequent get() calls return the cached extended value
+     * directly without re-entering this method.
+     */
+    private function applyExtenders(string $id, mixed $value): mixed
+    {
+        foreach ($this->extenders[$id] ?? [] as $extender) {
+            $value = $extender($value, $this);
+        }
+
+        return $value;
     }
 }
