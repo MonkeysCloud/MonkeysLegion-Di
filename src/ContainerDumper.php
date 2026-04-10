@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace MonkeysLegion\DI;
 
 use MonkeysLegion\DI\Exceptions\ServiceResolveException;
+
 use ReflectionClass;
 use ReflectionNamedType;
 
 /**
+ * MonkeysLegion Framework — DI Package
+ *
  * Dump a container's definitions to a compilable PHP file.
  *
  * The generated file returns an associative array of closures that can be
@@ -17,6 +20,9 @@ use ReflectionNamedType;
  * Usage:
  *   $dumper = new ContainerDumper();
  *   $dumper->dump($container, '/path/to/compiled_container.php');
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 final class ContainerDumper
 {

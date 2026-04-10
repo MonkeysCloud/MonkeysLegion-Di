@@ -1,21 +1,25 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\DI;
 
 /**
+ * MonkeysLegion Framework — DI Package
+ *
  * A compiled (cached) container that loads pre-built definitions from a PHP file.
  *
  * Falls back to the parent Container for any service not in the compiled cache.
  * Used in production to avoid repeated reflection and definition evaluation.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 class CompiledContainer extends Container
 {
     /**
-     * @param string $compiledFile Absolute path to the compiled definitions PHP file.
-     *                             The file must return an associative array of callables.
-     * @param array  $definitions  Additional definitions (merged after compiled ones)
+     * @param string                        $compiledFile Absolute path to the compiled definitions PHP file.
+     *                                                    The file must return an associative array of callables.
+     * @param array<string, callable|object> $definitions Additional definitions (merged after compiled ones).
      */
     public function __construct(string $compiledFile, array $definitions = [])
     {
@@ -23,6 +27,7 @@ class CompiledContainer extends Container
 
         if (file_exists($compiledFile)) {
             $compiled = require $compiledFile;
+
             if (!is_array($compiled)) {
                 $compiled = [];
             }
